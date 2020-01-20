@@ -6,6 +6,7 @@ from celery import Celery
 from eyewitness.image_id import ImageId
 from eyewitness.image_utils import ImageHandler, Image
 from eyewitness.result_handler.db_writer import BboxPeeweeDbWriter
+from eyewitness.config import RAW_IMAGE_PATH
 from peewee import SqliteDatabase
 from bistiming import Stopwatch
 
@@ -42,6 +43,7 @@ SQLITE_DB_PATH = os.environ.get('db_path')
 if SQLITE_DB_PATH is not None:
     DATABASE = SqliteDatabase(SQLITE_DB_PATH)
     DB_RESULT_HANDLER = BboxPeeweeDbWriter(DATABASE)
+    IMAGE_REGISTER = DB_RESULT_HANDLER
     DETECTION_RESULT_HANDLERS.append(DB_RESULT_HANDLER)
 
 celery = Celery('tasks', broker=BROKER_URL)
@@ -68,14 +70,16 @@ def detect_image(params):
     raw_image_path = params.get('raw_image_path')
 
     image_obj = generate_image(channel, timestamp, raw_image_path)
+    IMAGE_REGISTER.register_image(image_obj.image_id, {RAW_IMAGE_PATH: raw_image_path})
 
     with Stopwatch('Running inference on image {}...'.format(image_obj.raw_image_path)):
         detection_result = GLOBAL_OBJECT_DETECTOR.detect(image_obj)
 
     if is_store_detected_image and len(detection_result.detected_objects) > 0:
         ImageHandler.draw_bbox(image_obj.pil_image_obj, detection_result.detected_objects)
-        ImageHandler.save(image_obj.pil_image_obj,
-                          "%s/%s.jpg" % (DETECTED_IMAGE_FOLDER, str(image_obj.image_id)))
+        drawn_image_path = "%s/%s.jpg" % (DETECTED_IMAGE_FOLDER, str(image_obj.image_id))
+        ImageHandler.save(image_obj.pil_image_obj, drawn_image_path)
+        detection_result.image_dict['drawn_image_path'] = drawn_image_path
 
     for detection_result_handler in DETECTION_RESULT_HANDLERS:
         detection_result_handler.handle(detection_result)
