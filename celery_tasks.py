@@ -56,7 +56,7 @@ def generate_image_url(channel):
 def generate_image(channel, timestamp, raw_image_path=None):
     image_id = ImageId(channel=channel, timestamp=timestamp, file_format='jpg')
     if not raw_image_path:
-        raw_image_path = "%s/%s.jpg" % (RAW_IMAGE_FOLDER, str(image_id))
+        raw_image_path = "%s/%s.jpg" % ('raw_image', str(image_id))  # used for db
         # generate raw image
         urllib.request.urlretrieve(generate_image_url(channel), raw_image_path)
     return Image(image_id, raw_image_path=raw_image_path)
@@ -79,7 +79,9 @@ def detect_image(params):
         ImageHandler.draw_bbox(image_obj.pil_image_obj, detection_result.detected_objects)
         drawn_image_path = "%s/%s.jpg" % (DETECTED_IMAGE_FOLDER, str(image_obj.image_id))
         ImageHandler.save(image_obj.pil_image_obj, drawn_image_path)
-        detection_result.image_dict['drawn_image_path'] = drawn_image_path
+        # used for visualization
+        drawn_image_path_for_db = "%s/%s.jpg" % ('detected_image', str(image_obj.image_id))
+        detection_result.image_dict['drawn_image_path'] = drawn_image_path_for_db
 
     for detection_result_handler in DETECTION_RESULT_HANDLERS:
         detection_result_handler.handle(detection_result)
