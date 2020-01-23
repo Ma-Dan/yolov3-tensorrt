@@ -1,4 +1,5 @@
 import os
+import json
 import urllib.request
 
 import arrow
@@ -9,9 +10,13 @@ from eyewitness.result_handler.db_writer import BboxPeeweeDbWriter
 from eyewitness.config import RAW_IMAGE_PATH
 from peewee import SqliteDatabase
 from bistiming import Stopwatch
-
+from eyewitness.config import BBOX
+from eyewitness.detection_result_filter import FeedbackBboxDeNoiseFilter
 
 from naive_detector import TensorRTYoloV3DetectorWrapper
+from line_detection_result_handler import LineAnnotationSender
+from facebook_detection_result_handler import FaceBookAnnoationSender
+
 
 # leave interface for inference image shape
 INFERENCE_SHAPE = os.environ.get('inference_shape', '608,608')
@@ -39,12 +44,78 @@ BROKER_URL = os.environ.get('broker_url', 'amqp://guest:guest@rabbitmq:5672')
 
 DETECTION_RESULT_HANDLERS = []
 
+
+def image_url_handler(drawn_image_path):
+    """if site_domain not set in env, will pass a pickchu image"""
+    site_domain = os.environ.get('site_domain')
+    if site_domain is None:
+        return 'https://upload.wikimedia.org/wikipedia/en/a/a6/Pok%C3%A9mon_Pikachu_art.png'
+    else:
+        return '%s/%s' % (site_domain, drawn_image_path)
+
+
+def raw_image_url_handler(drawn_image_path):
+    """if site_domain not set in env, will pass a pickchu image"""
+    site_domain = os.environ.get('site_domain')
+    raw_image_path = drawn_image_path.replace('detected_image/', 'raw_image/')
+    if site_domain is None:
+        return 'https://upload.wikimedia.org/wikipedia/en/a/a6/Pok%C3%A9mon_Pikachu_art.png'
+    else:
+        return '%s/%s' % (site_domain, raw_image_path)
+
+
+def line_detection_result_filter(detection_result):
+    """
+    used to check if sent notification or not
+    """
+    return any(i.label == 'person' for i in detection_result.detected_objects)
+
+
 SQLITE_DB_PATH = os.environ.get('db_path')
+RESULT_HANDLERS = []
+DENOISE_FILTERS = []
 if SQLITE_DB_PATH is not None:
     DATABASE = SqliteDatabase(SQLITE_DB_PATH)
     DB_RESULT_HANDLER = BboxPeeweeDbWriter(DATABASE)
     IMAGE_REGISTER = DB_RESULT_HANDLER
     DETECTION_RESULT_HANDLERS.append(DB_RESULT_HANDLER)
+
+    # setup your line channel token and audience
+    channel_access_token = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+    if channel_access_token:
+        line_annotation_sender = LineAnnotationSender(
+            channel_access_token=channel_access_token,
+            image_url_handler=image_url_handler,
+            raw_image_url_handler=raw_image_url_handler,
+            detection_result_filter=line_detection_result_filter,
+            detection_method=BBOX,
+            update_audience_period=10,
+            database=DATABASE)
+        RESULT_HANDLERS.append(line_annotation_sender)
+
+    fb_user_email = os.environ.get('FACEBOOK_USER_EMAIL')
+    if fb_user_email:
+        fb_user_password = os.environ.get('FACEBOOK_USER_PASSWORD')
+        fb_session_cookie_path = os.environ.get('FACEBOOK_SESSION_COOKIES_PATH')
+        audience_id_str = os.environ.get('YOUR_USER_ID')
+        audience_ids = set([i for i in audience_id_str.split(',') if i])
+        with open(fb_session_cookie_path, 'r') as f:
+            session_dict = json.load(f)
+
+        facebook_annotation_sender = FaceBookAnnoationSender(
+            audience_ids=audience_ids,
+            user_email=fb_user_email,
+            user_password=fb_user_password,
+            session_dict=session_dict,
+            image_url_handler=image_url_handler,
+            detection_result_filter=line_detection_result_filter,
+            detection_method=BBOX)
+        RESULT_HANDLERS.append(facebook_annotation_sender)
+
+    # denoise filter
+    denoise_filter = FeedbackBboxDeNoiseFilter(
+        DATABASE, detection_threshold=DETECTION_THRESHOLD)
+    DENOISE_FILTERS.append(denoise_filter)
 
 celery = Celery('tasks', broker=BROKER_URL)
 
@@ -82,6 +153,9 @@ def detect_image(params):
         # used for visualization
         drawn_image_path_for_db = "%s/%s.jpg" % ('detected_image', str(image_obj.image_id))
         detection_result.image_dict['drawn_image_path'] = drawn_image_path_for_db
+
+    for detection_result_filter in DENOISE_FILTERS:
+        detection_result = detection_result_filter.apply(detection_result)
 
     for detection_result_handler in DETECTION_RESULT_HANDLERS:
         detection_result_handler.handle(detection_result)

@@ -1,6 +1,7 @@
 import argparse
 import os
 import logging
+import json
 
 from eyewitness.flask_server import BboxObjectDetectionFlaskWrapper
 from eyewitness.config import BBOX
@@ -11,6 +12,7 @@ from peewee import SqliteDatabase
 
 from naive_detector import TensorRTYoloV3DetectorWrapper
 from line_detection_result_handler import LineAnnotationSender
+from facebook_detection_result_handler import FaceBookAnnoationSender
 
 
 # class YOLO defines the default value, so suppress any default here
@@ -93,6 +95,25 @@ if __name__ == '__main__':
             update_audience_period=10,
             database=database)
         result_handlers.append(line_annotation_sender)
+
+    fb_user_email = os.environ.get('FACEBOOK_USER_EMAIL')
+    if fb_user_email:
+        fb_user_password = os.environ.get('FACEBOOK_USER_PASSWORD')
+        fb_session_cookie_path = os.environ.get('FACEBOOK_SESSION_COOKIES_PATH')
+        audience_id_str = os.environ.get('YOUR_USER_ID')
+        audience_ids = set([i for i in audience_id_str.split(',') if i])
+        with open(fb_session_cookie_path, 'r') as f:
+            session_dict = json.load(f)
+
+        facebook_annotation_sender = FaceBookAnnoationSender(
+            audience_ids=audience_ids,
+            user_email=fb_user_email,
+            user_password=fb_user_password,
+            session_dict=session_dict,
+            image_url_handler=image_url_handler,
+            detection_result_filter=line_detection_result_filter,
+            detection_method=BBOX)
+        result_handlers.append(facebook_annotation_sender)
 
     # denoise filter
     denoise_filters = []
