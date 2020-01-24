@@ -73,7 +73,6 @@ def line_detection_result_filter(detection_result):
 
 
 SQLITE_DB_PATH = os.environ.get('db_path')
-RESULT_HANDLERS = []
 DENOISE_FILTERS = []
 if SQLITE_DB_PATH is not None:
     DATABASE = SqliteDatabase(SQLITE_DB_PATH)
@@ -92,7 +91,7 @@ if SQLITE_DB_PATH is not None:
             detection_method=BBOX,
             update_audience_period=10,
             database=DATABASE)
-        RESULT_HANDLERS.append(line_annotation_sender)
+        DETECTION_RESULT_HANDLERS.append(line_annotation_sender)
 
     fb_user_email = os.environ.get('FACEBOOK_USER_EMAIL')
     if fb_user_email:
@@ -111,7 +110,7 @@ if SQLITE_DB_PATH is not None:
             image_url_handler=image_url_handler,
             detection_result_filter=line_detection_result_filter,
             detection_method=BBOX)
-        RESULT_HANDLERS.append(facebook_annotation_sender)
+        DETECTION_RESULT_HANDLERS.append(facebook_annotation_sender)
 
     # denoise filter
     denoise_filter = FeedbackBboxDeNoiseFilter(
