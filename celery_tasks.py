@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 import urllib.request
 
 import arrow
@@ -155,7 +156,13 @@ def detect_image(params):
         detection_result.image_dict['drawn_image_path'] = drawn_image_path_for_db
 
     for detection_result_filter in DENOISE_FILTERS:
-        detection_result = detection_result_filter.apply(detection_result)
+        try:
+            detection_result = detection_result_filter.apply(detection_result)
+        except Exception as e:
+            logging.info(e)
 
     for detection_result_handler in DETECTION_RESULT_HANDLERS:
-        detection_result_handler.handle(detection_result)
+        try:
+            detection_result_handler.handle(detection_result)
+        except Exception as e:
+            logging.info(e)
