@@ -52,7 +52,9 @@ def get_engine(onnx_file_path, engine_file_path=""):
     """Attempts to load a serialized engine if available, otherwise builds a new TensorRT engine and saves it."""
     def build_engine():
         """Takes an ONNX file and creates a TensorRT engine to run inference with"""
-        with trt.Builder(TRT_LOGGER) as builder, builder.create_network() as network, trt.OnnxParser(network, TRT_LOGGER) as parser:
+        #network_creation_flag = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_PRECISION)
+        network_creation_flag = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        with trt.Builder(TRT_LOGGER) as builder, builder.create_network(network_creation_flag) as network, trt.OnnxParser(network, TRT_LOGGER) as parser:
             builder.max_workspace_size = 1 << 30 # 1GB
             builder.max_batch_size = 1
             # Parse model file
@@ -61,6 +63,9 @@ def get_engine(onnx_file_path, engine_file_path=""):
                 exit(0)
             print('Loading ONNX file from path {}...'.format(onnx_file_path))
             with open(onnx_file_path, 'rb') as model:
+                if not parser.parse(model.read()):
+                    for error in range(parser.num_errors):
+                        print(parser.get_error(error))
                 print('Beginning ONNX file parsing')
                 parser.parse(model.read())
             print('Completed parsing of ONNX file')
