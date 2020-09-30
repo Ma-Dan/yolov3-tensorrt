@@ -57,6 +57,7 @@ def get_engine(onnx_file_path, engine_file_path=""):
         with trt.Builder(TRT_LOGGER) as builder, builder.create_network(network_creation_flag) as network, trt.OnnxParser(network, TRT_LOGGER) as parser:
             builder.max_workspace_size = 1 << 30 # 1GB
             builder.max_batch_size = 1
+            builder.fp16_mode = True
             # Parse model file
             if not os.path.exists(onnx_file_path):
                 print('ONNX file {} not found, please run yolov3_to_onnx.py first to generate it.'.format(onnx_file_path))
